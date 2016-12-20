@@ -1,0 +1,67 @@
+---
+- assert:
+    that: ansible_version.major == 2
+    msg: "This playbook is for Ansible version 2"
+
+- block:
+    - name: yum | install epel-release
+      yum:
+        name: epel-release
+        state: latest
+        update_cache: yes
+
+    - name: yum | install fail2ban
+      yum:
+        name: fail2ban
+        state: latest
+        update_cache: yes
+
+    - name: get installed fail2ban version
+      shell: "rpm -qi fail2ban | grep -E '^Version.*' | sed 's/ //g' | cut -f2 -d."
+      register: fail2ban_version_info
+      changed_when: false
+
+    - set_fact: fail2ban_version={{ fail2ban_version_info.stdout }}
+
+  when: ansible_distribution == 'CentOS' or ansible_distribution == "Red Hat Enterprise Linux"
+  tags:
+    - fail2ban_install
+
+- block:
+    - name: apt | install fail2ban
+      apt:
+        name: fail2ban
+        state: latest
+        update_cache: yes
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+
+    - name: get installed fail2ban version
+      shell: "dpkg -s fail2ban | grep -E '^Version.*' | sed 's/ //g' | cut -f2 -d."
+      register: fail2ban_version_info
+      changed_when: false
+
+    - set_fact: fail2ban_version={{ fail2ban_version_info.stdout }}
+
+  when: ansible_distribution == 'Debian' or ansible_distribution == "Ubuntu"
+  tags:
+    - fail2ban_install
+
+- name: configure fail2ban
+  template:
+    src: "{{ item }}.j2"
+    dest: "/etc/fail2ban/{{ item }}"
+  with_items:
+    - jail.local
+    - fail2ban.local
+  notify:
+    - restart fail2ban
+  tags:
+    - fail2ban_configure
+
+- name: ensure fail2ban starts on a fresh reboot
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes
+  tags:
+    - fail2ban_install
